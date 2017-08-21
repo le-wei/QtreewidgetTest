@@ -3,8 +3,9 @@
 #include<QDebug>
 #include<QMenu>
 #include<QTimer>
+
 DarwinTreeWidget::DarwinTreeWidget(QWidget *parent) :
-    QTreeWidget(parent)
+    QTreeWidget(parent),menu(NULL)
 {
 
   connect(this,SIGNAL(currentItemChanged(QTreeWidgetItem*,QTreeWidgetItem*)),this,SLOT(on_currentItemChanged_function(QTreeWidgetItem*,QTreeWidgetItem*)));
@@ -13,10 +14,10 @@ DarwinTreeWidget::DarwinTreeWidget(QWidget *parent) :
     time = new QTimer(this);
     connect(time,SIGNAL(timeout()),this,SLOT(on_timer_function()));
     time->start(30000);
+    connect(this,SIGNAL(itemChanged(QTreeWidgetItem*,int)),this,SLOT(on_itemChanged_function(QTreeWidgetItem*,int)));
 }
 DarwinTreeWidget::~DarwinTreeWidget()
 {
-    delete this->menu;
 }
 void DarwinTreeWidget::setFileName(QString FileName)
 {
@@ -94,13 +95,17 @@ QHash<QString,QList<QString>> DarwinTreeWidget::getUptadeTable()
     }
     QHash<QString,QList<QString>> tem = this->m_HUptadeTable;
     this->m_HUptadeTable.clear();
-
     return tem;
 
 }
 void DarwinTreeWidget::allPull(QHash<QString, QTreeWidgetItem *>& serveItemList)
 {
+    if( 0==serveItemList.size() )
+    {
+        return;
+    }
     QList<QString> keys = m_itemList.keys();
+    qDebug()<<"keys number"<<keys.size();
     foreach (QString key, keys) {
         QTreeWidgetItem * itemtem =serveItemList.value(key);
         QTreeWidgetItem *item = m_itemList.value(key);
@@ -123,12 +128,12 @@ void DarwinTreeWidget::allPull(QHash<QString, QTreeWidgetItem *>& serveItemList)
                  if(tem!=NULL)
                  {
                      delete tem;
-                     QStringList listtem;
-                     listtem.append(key);
-                     listtem.append(QString::number(DELETE,10));
-                     this->m_HHistoryTable.insert(key,new QTreeWidgetItem(listtem));
-                     this->m_HConflictList.insert(key,new QTreeWidgetItem(listtem));
                  }
+                 QStringList listtem;
+                 listtem.append(key);
+                 listtem.append(QString::number(DELETE,10));
+                 this->m_HHistoryTable.insert(key,new QTreeWidgetItem(listtem));
+                 this->m_HConflictList.insert(key,new QTreeWidgetItem(listtem));
                 break;
             }
         }
@@ -142,12 +147,12 @@ void DarwinTreeWidget::allPull(QHash<QString, QTreeWidgetItem *>& serveItemList)
                     {
                         item->setText(i,itemtem->text(i));
                     }
-
                 }
                 delete serveItemList.take(key);
                 break;
             case DELETE:
                 this->m_HHistoryTable.insert(key,new QTreeWidgetItem(*itemtem));
+                this->m_HConflictList.insert(key,new QTreeWidgetItem(*itemtem));
                 delete serveItemList.take(key);
                 break;
             case EDITED:              
@@ -155,28 +160,32 @@ void DarwinTreeWidget::allPull(QHash<QString, QTreeWidgetItem *>& serveItemList)
                 QTreeWidgetItem * tem = this->m_HHistoryTable.take(key);
                 if(tem!=NULL)
                 {
-                    delete tem;
-                   this->m_HHistoryTable.insert(key,new QTreeWidgetItem(*itemtem));
+                   delete tem;
                 }
+                this->m_HHistoryTable.insert(key,new QTreeWidgetItem(*itemtem));
                 delete serveItemList.take(key);
                 break;
-
             }
-
         }
     }
     if(serveItemList.size()!=0)
     {
         foreach (QTreeWidgetItem* item, serveItemList) {
-            this->m_itemList.insert(item->text(m_key),item);
+            this->m_itemList.insert(item->text(m_key),new QTreeWidgetItem(*item));
+            delete item;
         }
+        serveItemList.clear();
 
     }
-
+    qDebug()<<"server size"<<serveItemList.size();
     this->createTree();
 }
 void DarwinTreeWidget::partPull(QHash<QString, QTreeWidgetItem *> &serveItemList)
 {
+    if( 0==serveItemList.size())
+    {
+        return;
+    }
     QList<QString> keys = serveItemList.keys();
     foreach (QString key, keys) {
        QTreeWidgetItem*item = this->m_itemList.value(key);
@@ -211,6 +220,24 @@ void DarwinTreeWidget::partPull(QHash<QString, QTreeWidgetItem *> &serveItemList
        delete tem;
     }
     this->createTree();
+}
+
+void DarwinTreeWidget::deleteItem(QHash<QString, QTreeWidgetItem *> &serveItemList)
+{
+    if(serveItemList.size() == 0)
+    {
+        return;
+    }
+    QList<QString> keys = serveItemList.keys();
+    foreach (QString key, keys) {
+        QTreeWidgetItem*item = this->m_itemList.take(key);
+        QTreeWidgetItem* itemtem = serveItemList.take(key);
+        if(item!=NULL)
+        {
+            this->delete_Item(item);
+        }
+        delete itemtem;
+    }
 }
 
 void DarwinTreeWidget::setKey(int key)
@@ -373,10 +400,91 @@ void DarwinTreeWidget::on_edit_function()
 
    }
    item->setText(item->columnCount()-1,QString::number(EDITED,10));
-
+   this->clearSelection();
 
 }
 
+void DarwinTreeWidget::on_revokededit_function()
+{
+    QTreeWidgetItem *item = this->currentItem();
+    if(item==NULL)
+    {
+        return;
+    }
+    QTreeWidgetItem *itemtem = this->m_HHistoryTable.take(item->text(m_key));
+    QTreeWidgetItem *itemConflict = this->m_HConflictList.take(item->text(m_key));
+    if(itemtem!=NULL)
+    {
+        int coln = item->columnCount();
+        for(int i=0;i<coln;i++)
+        {
+            item->setText(i,itemtem->text(i));
+            item->setBackgroundColor(i,QColor("#ffffff"));
+        }
+        delete itemtem;
+    }
+    if(itemConflict!=NULL)
+    {
+        delete itemConflict;
+    }
+    this->m_HUptadeTable.remove(item->text(m_key));
+    item->setText(item->columnCount()-2,QString::number(NORMAL,10));
+    item->setText(item->columnCount()-1,QString::number(NORMAL,10));
+}
+
+void DarwinTreeWidget::keyPressEvent(QKeyEvent *event)
+{
+
+    int colun=this->columnCount();
+    QTreeWidgetItem *item = this->currentItem();
+
+    qDebug()<<item->text(colun);
+    if(item==NULL)
+        return;
+
+    if (event->key() == Qt::Key_Return && item->text(item->columnCount()-1)==QString::number(EDITED,10))
+    {
+        item->setText(item->columnCount()-1,QString::number(ITEMEDITED,10));
+    }
+
+}
+
+void DarwinTreeWidget::on_itemChanged_function(QTreeWidgetItem*item,int n)
+{
+
+    if(item!=NULL)
+    {
+
+        if(item!=NULL && item->text(item->columnCount()-1)==QString::number(ITEMEDITED,10))
+        {
+            qDebug()<<"saveModify";
+            QTreeWidgetItem *itemhost = this->m_HHistoryTable.value(item->text(m_key));
+            for(int i=0;i<item->columnCount();i++)
+            {
+                qDebug()<<item->text(i);
+            }
+            if(!this->itemComparison(item,itemhost))
+            {
+                item->setText(item->columnCount()-1,QString::number(EDITED,10));
+                emit currentItemChanged(item,item);
+            }
+
+        }
+    }
+
+
+}
+void DarwinTreeWidget::getItem()
+{
+     QTreeWidgetItem *item = this->currentItem();
+     if(item!=NULL)
+     {
+        for(int i=0;i<item->columnCount();i++)
+        {
+            qDebug()<<item->text(i);
+        }
+     }
+}
 void DarwinTreeWidget::on_currentItemChanged_function(QTreeWidgetItem* current, QTreeWidgetItem* previous)
 {
  //   qDebug()<<"on_currentItemChanged_function current ";
@@ -389,11 +497,11 @@ void DarwinTreeWidget::on_currentItemChanged_function(QTreeWidgetItem* current, 
     if(previous != NULL && previous->text(previous->columnCount()-1)==QString::number(EDITED,10))
     {
         int colun=previous->columnCount();
-     //   qDebug()<<"on_currentItemChanged_function previous ";
-//        for(int i=0;i<previous->columnCount();i++)
-//        {
-//            qDebug()<<previous->text(i);
-//        }
+        qDebug()<<"on_currentItemChanged_function previous ";
+        for(int i=0;i<previous->columnCount();i++)
+        {
+            qDebug()<<previous->text(i);
+        }
      //    qDebug()<<"on_currentItemChanged_function previous end";
         QTreeWidgetItem* item = this->m_HHistoryTable.value(previous->text(m_key),NULL);
         if(item!=NULL)
@@ -504,11 +612,14 @@ void DarwinTreeWidget::contextMenuEvent(QContextMenuEvent * event)
     else if(this->isEdit)
     {
        menu = new QMenu();
-
+       if(itemlist->text(itemlist->columnCount()-2) == QString::number(EDITED,10))
+       {
+            connect( menu->addAction("revoked edit"),SIGNAL(triggered()),this,SLOT(on_revokededit_function()));
+       }
        connect(menu->addAction("edit"),SIGNAL(triggered()),this,SLOT(on_edit_function()));
        if(itemlist->text(itemlist->columnCount()-2) == QString::number(DELETE,10))
        {
-           connect( menu->addAction("remove delete"),SIGNAL(triggered()),this,SLOT(on_delete_function()));
+           connect( menu->addAction("revoked delete"),SIGNAL(triggered()),this,SLOT(on_delete_function()));
        }else
        {
            connect( menu->addAction("delete"),SIGNAL(triggered()),this,SLOT(on_delete_function()));
@@ -516,7 +627,8 @@ void DarwinTreeWidget::contextMenuEvent(QContextMenuEvent * event)
 
 
        menu->exec(QCursor::pos());
-
+       delete menu;
+       menu = NULL;
     }
 
 }

@@ -13,10 +13,11 @@ TEMPLATE = app
 
 
 SOURCES += main.cpp\
-    myqtreewidget.cpp
+    myqtreewidget.cpp \
 
 HEADERS  += \
-    myqtreewidget.h
+    myqtreewidget.h \
+
 
 FORMS    += mainwindow.ui
 
